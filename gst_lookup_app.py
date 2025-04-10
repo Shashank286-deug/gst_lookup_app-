@@ -42,26 +42,39 @@ st.write("Paste up to 1000 legal names (one per line) below:")
 input_text = st.text_area("Enter Legal Names", height=300, help="Paste legal names here, one per line")
 
 if st.button("Find GSTINs"):
-    legal_names = [name.strip() for name in input_text.strip().split("\n") if name.strip()]
+    legal_names_raw = [name.strip() for name in input_text.strip().split("\n") if name.strip()]
+    legal_names = list(dict.fromkeys(legal_names_raw))  # remove duplicates
 
     if not legal_names:
         st.warning("Please enter at least one legal name.")
     elif len(legal_names) > 1000:
         st.warning("Limit is 1000 names. Please reduce the number of names.")
     else:
+        st.info(f"Processing {len(legal_names)} unique names (removed {len(legal_names_raw) - len(legal_names)} duplicates).")
         result_data = []
-        with st.spinner("Fetching GSTINs..."):
-            for name in legal_names:
-                gstin, official_name = get_gst_from_knowyourgst(name)
-                result_data.append({
-                    "Input Legal Name": name,
-                    "Found GSTIN": gstin,
-                    "Matched Legal Name": official_name
-                })
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+
+        for i, name in enumerate(legal_names):
+            gstin, official_name = get_gst_from_knowyourgst(name)
+            result_data.append({
+                "Input Legal Name": name,
+                "Found GSTIN": gstin,
+                "Matched Legal Name": official_name
+            })
+            progress_bar.progress((i + 1) / len(legal_names))
+            status_text.text(f"{i + 1} of {len(legal_names)} processed")
 
         result_df = pd.DataFrame(result_data)
-        st.success("Lookup complete!")
-        st.dataframe(result_df)
+
+        # Highlight Not Found/Error
+        def highlight_missing(val):
+            if val in ["Not Found", "Error"]:
+                return 'background-color: #fdd'
+            return ''
+
+        st.success("✅ Lookup complete!")
+        st.dataframe(result_df.style.applymap(highlight_missing, subset=["Found GSTIN"]))
 
         with NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
             result_df.to_excel(tmp.name, index=False)
