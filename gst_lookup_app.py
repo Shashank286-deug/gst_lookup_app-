@@ -5,10 +5,11 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.keys import Keys
 from tempfile import NamedTemporaryFile
 import os
 
-# Function to search GSTIN based on Legal Name from KnowYourGST
+# GST Lookup using the search bar from the KnowYourGST direct search page
 def get_gst_from_knowyourgst(name):
     try:
         options = Options()
@@ -17,26 +18,34 @@ def get_gst_from_knowyourgst(name):
         options.add_argument('--disable-dev-shm-usage')
         driver = webdriver.Chrome(service=Service(), options=options)
 
-        search_url = f"https://www.knowyourgst.com/search/?q={name.replace(' ', '+')}"
-        driver.get(search_url)
+        driver.get("https://www.knowyourgst.com/gst-number-search/by-name-pan/")
         time.sleep(3)
 
-        rows = driver.find_elements(By.CSS_SELECTOR, 'table tr')
-        for row in rows[1:]:
-            columns = row.find_elements(By.TAG_NAME, 'td')
+        # Find the input field and submit the name
+        search_box = driver.find_element(By.ID, "search_input")
+        search_box.clear()
+        search_box.send_keys(name)
+        search_box.send_keys(Keys.RETURN)
+        time.sleep(4)
+
+        # Look for table rows with results
+        rows = driver.find_elements(By.CSS_SELECTOR, "table.table tbody tr")
+        for row in rows:
+            columns = row.find_elements(By.TAG_NAME, "td")
             if len(columns) >= 2:
                 gstin = columns[0].text.strip()
                 legal_name = columns[1].text.strip()
                 if name.lower() in legal_name.lower():
                     driver.quit()
                     return gstin, legal_name
+
         driver.quit()
         return "Not Found", "Not Found"
     except Exception as e:
         return "Error", str(e)
 
 # Streamlit UI
-st.title("🔎 GSTIN Finder from Legal Names")
+st.title("🔎 GSTIN Finder (Using KnowYourGST Search)")
 st.write("Paste up to 1000 legal names (one per line) below:")
 
 input_text = st.text_area("Enter Legal Names", height=300, help="Paste legal names here, one per line")
