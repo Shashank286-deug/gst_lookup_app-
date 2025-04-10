@@ -119,3 +119,57 @@ if st.session_state.last_searches:
     st.markdown("### 🕒 Recent Legal Names Searched")
     for name in st.session_state.last_searches:
         st.markdown(f"- {name}")
+
+
+
+# =========================
+# Show recent search history
+# =========================
+st.markdown("### 🕒 Recent Legal Names Searched")
+
+if st.session_state.last_searches:
+    cols = st.columns([3, 1, 1])
+    for name in st.session_state.last_searches:
+        with cols[0]:
+            st.markdown(f"- **{name}**")
+        with cols[1]:
+            if st.button(f"✏️ Edit", key=f"edit_{name}"):
+                st.session_state.input_text = name
+                st.experimental_rerun()
+        with cols[2]:
+            if st.button(f"🔁 Search Again", key=f"retry_{name}"):
+                st.session_state.input_text = name
+                st.session_state.trigger_single_search = True
+                st.experimental_rerun()
+else:
+    st.write("No recent searches yet.")
+
+# Clear button
+if st.button("🧹 Clear Recent Searches"):
+    st.session_state.last_searches = []
+    st.success("Cleared search history!")
+
+# Support single-name instant search
+if 'trigger_single_search' in st.session_state and st.session_state.get('trigger_single_search'):
+    st.session_state.trigger_single_search = False
+    name = st.session_state.input_text
+    if name:
+        st.info(f"Reprocessing single name: {name}")
+        gstin, matched_name = get_gst_from_knowyourgst(name)
+        result_df = pd.DataFrame([{
+            "Input Legal Name": name,
+            "Found GSTIN": gstin,
+            "Matched Legal Name": matched_name,
+            "Manual Link": f"https://www.knowyourgst.com/search/?q={name.replace(' ', '+')}"
+        }])
+
+        def make_clickable(val):
+            return f'<a href="{val}" target="_blank">🔍 Manual Search</a>'
+
+        def highlight_missing(val):
+            return 'background-color: #fdd' if val in ["Not Found", "Error", "No table"] else ''
+
+        st.dataframe(result_df.drop(columns=["Manual Link"]).style.applymap(highlight_missing, subset=["Found GSTIN"]))
+        st.markdown("### 🔗 Manual Lookup Link")
+        st.write(result_df[["Input Legal Name", "Manual Link"]].to_html(escape=False, index=False), unsafe_allow_html=True)
+
