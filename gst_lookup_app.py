@@ -1,147 +1,95 @@
 import streamlit as st
-import pandas as pd
-import time
 import requests
-from googlesearch import search
-from tempfile import NamedTemporaryFile
-import os
+from bs4 import BeautifulSoup
+import pandas as pd
+import re
+from io import BytesIO
 
-# Initialize session state for recent searches
-if 'last_searches' not in st.session_state:
-    st.session_state.last_searches = []
+# Bing Search API config
+BING_API_KEY = st.secrets["BING_API_KEY"]
+BING_ENDPOINT = "https://api.bing.microsoft.com/v7.0/search"
 
-# GST Lookup Function via Google Search
-def get_gst_via_google(name):
+# Cache results
+@st.cache_data
+
+def get_gst_via_bing(name):
+    headers = {"Ocp-Apim-Subscription-Key": BING_API_KEY}
+    query = f"{name} GST number"
+    params = {"q": query, "count": 5}
+
     try:
-        query = f"{name} gst number"
-        urls = list(search(query, num_results=5))
+        response = requests.get(BING_ENDPOINT, headers=headers, params=params)
         results = []
-
-        for url in urls:
-            try:
+        if response.status_code == 200:
+            data = response.json()
+            for result in data.get("webPages", {}).get("value", []):
+                url = result["url"]
                 res = requests.get(url, timeout=10)
                 soup = BeautifulSoup(res.text, 'html.parser')
                 text = soup.get_text()
-                gstins = set()
-
-                for word in text.split():
-                    if len(word) == 15 and word.isalnum() and word[:2].isdigit():
-                        gstins.add(word)
-
-                for gstin in gstins:
-                    results.append((gstin, name))
-                if results:
-                    break
-            except:
-                continue
-
-        if not results:
-            results.append(("Not Found", name))
-        return results
-
+                matches = re.findall(r'\b[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}\b', text)
+                for match in matches:
+                    results.append((match, name))
+            if not results:
+                results.append(("Not Found", name))
+        else:
+            results.append(("Error", f"API error: {response.status_code}"))
     except Exception as e:
-        return [("Error", str(e))]
+        results.append(("Error", str(e)))
+    return results
 
-# UI Section
-st.title("🔎 GSTIN Finder via Web Search")
-st.markdown("Paste up to 1000 legal names (one per line):")
+# Recent searches memory
+if "recent_searches" not in st.session_state:
+    st.session_state.recent_searches = []
 
-input_text = st.text_area("Enter Legal Names", height=300, help="Paste legal names here, one per line")
+def clear_recent():
+    st.session_state.recent_searches = []
 
-if st.button("Find GSTINs"):
-    legal_names_raw = [name.strip() for name in input_text.strip().split("\n") if name.strip()]
-    legal_names = list(dict.fromkeys(legal_names_raw))
+st.title("🔍 GST Lookup Tool (via Bing Search)")
+st.markdown("Enter up to 1000 Legal Names below (one per line):")
 
-    if not legal_names:
-        st.warning("Please enter at least one legal name.")
-    elif len(legal_names) > 1000:
-        st.warning("Limit is 1000 names. Please reduce the number of names.")
-    else:
-        result_data = []
-        progress_bar = st.progress(0)
-        status_text = st.empty()
+names_input = st.text_area("Legal Names", height=300)
 
-        for i, name in enumerate(legal_names):
-            all_results = get_gst_via_google(name)
-            if name not in st.session_state.last_searches:
-                st.session_state.last_searches.insert(0, name)
-                st.session_state.last_searches = st.session_state.last_searches[:5]
+if st.button("Search GST Numbers") and names_input.strip():
+    names = [n.strip() for n in names_input.splitlines() if n.strip()][:1000]
+    output_data = []
 
-            for gstin, matched_name in all_results:
-                result_data.append({
-                    "Input Legal Name": name,
-                    "Found GSTIN": gstin,
-                    "Matched Legal Name": matched_name,
-                    "Manual Search": f"https://www.google.com/search?q={name.replace(' ', '+')}+gst+number"
-                })
+    progress = st.progress(0)
+    for i, name in enumerate(names):
+        gst_results = get_gst_via_bing(name)
+        found = gst_results[0][0] if gst_results else "Not Found"
+        output_data.append({"Legal Name": name, "GST Number": found})
 
-            progress_bar.progress((i + 1) / len(legal_names))
-            status_text.text(f"{i + 1} of {len(legal_names)} processed")
+        # Save to recent searches (latest 5)
+        if name not in st.session_state.recent_searches:
+            st.session_state.recent_searches.insert(0, name)
+            st.session_state.recent_searches = st.session_state.recent_searches[:5]
 
-        result_df = pd.DataFrame(result_data)
+        progress.progress((i + 1) / len(names))
 
-        def highlight_missing(val):
-            return 'background-color: #fdd' if val in ["Not Found", "Error"] else ''
+    df = pd.DataFrame(output_data)
+    st.dataframe(df)
 
-        st.success("✅ Lookup complete!")
-        st.markdown("### 💾 Results")
-        st.write(result_df.drop(columns=["Manual Search"]).style.applymap(highlight_missing, subset=["Found GSTIN"]))
+    # Download Excel
+    output = BytesIO()
+    df.to_excel(output, index=False)
+    st.download_button("📥 Download Results as Excel", output.getvalue(), file_name="gst_results.xlsx")
 
-        st.markdown("### 🔗 Manual Lookup Links")
-        st.write(result_df[["Input Legal Name", "Manual Search"]].to_html(escape=False, index=False), unsafe_allow_html=True)
+# Recent search section
+st.subheader("🕘 Recent Searches")
+for i, name in enumerate(st.session_state.recent_searches):
+    cols = st.columns([4, 1, 1])
+    with cols[0]:
+        st.text_input(f"Recent {i+1}", name, key=f"recent_{i}")
+    with cols[1]:
+        if st.button("🔁 Re-search", key=f"re_{i}"):
+            names_input = name
+            st.rerun()
+    with cols[2]:
+        if st.button("❌ Remove", key=f"rm_{i}"):
+            st.session_state.recent_searches.pop(i)
+            st.rerun()
 
-        with NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-            result_df.drop(columns=["Manual Search"]).to_excel(tmp.name, index=False)
-            st.download_button(
-                label="📥 Download Results as Excel",
-                data=open(tmp.name, 'rb').read(),
-                file_name="gst_results.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-            os.unlink(tmp.name)
-
-# =========================
-# Show recent search history
-# =========================
-st.markdown("### 🕒 Recent Legal Names Searched")
-
-if st.session_state.last_searches:
-    cols = st.columns([3, 1, 1])
-    for name in st.session_state.last_searches:
-        with cols[0]:
-            st.markdown(f"- **{name}**")
-        with cols[1]:
-            if st.button(f"✏️ Edit", key=f"edit_{name}"):
-                st.session_state.input_text = name
-                st.experimental_rerun()
-        with cols[2]:
-            if st.button(f"🔁 Search Again", key=f"retry_{name}"):
-                st.session_state.input_text = name
-                st.session_state.trigger_single_search = True
-                st.experimental_rerun()
-else:
-    st.write("No recent searches yet.")
-
-if st.button("🧹 Clear Recent Searches"):
-    st.session_state.last_searches = []
-    st.success("Cleared search history!")
-
-if 'trigger_single_search' in st.session_state and st.session_state.get('trigger_single_search'):
-    st.session_state.trigger_single_search = False
-    name = st.session_state.input_text
-    if name:
-        st.info(f"Reprocessing single name: {name}")
-        all_results = get_gst_via_google(name)
-        result_df = pd.DataFrame([{
-            "Input Legal Name": name,
-            "Found GSTIN": gstin,
-            "Matched Legal Name": matched_name,
-            "Manual Search": f"https://www.google.com/search?q={name.replace(' ', '+')}+gst+number"
-        } for gstin, matched_name in all_results])
-
-        def highlight_missing(val):
-            return 'background-color: #fdd' if val in ["Not Found", "Error"] else ''
-
-        st.dataframe(result_df.drop(columns=["Manual Search"]).style.applymap(highlight_missing, subset=["Found GSTIN"]))
-        st.markdown("### 🔗 Manual Lookup Link")
-        st.write(result_df[["Input Legal Name", "Manual Search"]].to_html(escape=False, index=False), unsafe_allow_html=True)
+if st.button("🧹 Clear All Recent Searches"):
+    clear_recent()
+    st.success("Cleared all recent searches!")
