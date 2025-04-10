@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import time
 import requests
-from bs4 import BeautifulSoup
 from googlesearch import search
 from tempfile import NamedTemporaryFile
 import os
