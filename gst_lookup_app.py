@@ -1,41 +1,36 @@
 import streamlit as st
 import requests
 import pandas as pd
-import re
 from io import BytesIO
 
-# Bing Search API config
-BING_API_KEY = st.secrets["BING_API_KEY"]
-BING_ENDPOINT = "https://api.bing.microsoft.com/v7.0/search"
+# Gemini API config
+GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+GEMINI_ENDPOINT = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
 
-# Cache results
+# Query Gemini API for GST info
 @st.cache_data
-
-def get_gst_via_bing(name):
-    headers = {"Ocp-Apim-Subscription-Key": BING_API_KEY}
-    query = f"{name} GST number"
-    params = {"q": query, "count": 5}
-
+def get_gst_via_gemini(name):
+    prompt = f"Search for the GST number of the company '{name}' in India. Return only the GST number if available, or say 'Not Found'."
+    headers = {"Content-Type": "application/json"}
+    data = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt}
+                ]
+            }
+        ]
+    }
     try:
-        response = requests.get(BING_ENDPOINT, headers=headers, params=params)
-        results = []
+        response = requests.post(GEMINI_ENDPOINT, headers=headers, json=data, timeout=15)
         if response.status_code == 200:
-            data = response.json()
-            for result in data.get("webPages", {}).get("value", []):
-                url = result["url"]
-                res = requests.get(url, timeout=10)
-                soup = BeautifulSoup(res.text, 'html.parser')
-                text = soup.get_text()
-                matches = re.findall(r'\b[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}\b', text)
-                for match in matches:
-                    results.append((match, name))
-            if not results:
-                results.append(("Not Found", name))
+            result = response.json()
+            content = result["candidates"][0]["content"]["parts"][0]["text"].strip()
+            return [(content, name)]
         else:
-            results.append(("Error", f"API error: {response.status_code}"))
+            return [("Error", f"API {response.status_code}")]
     except Exception as e:
-        results.append(("Error", str(e)))
-    return results
+        return [("Error", str(e))]
 
 # Recent searches memory
 if "recent_searches" not in st.session_state:
@@ -44,7 +39,7 @@ if "recent_searches" not in st.session_state:
 def clear_recent():
     st.session_state.recent_searches = []
 
-st.title("🔍 GST Lookup Tool (via Bing Search)")
+st.title("🔍 GST Lookup Tool (via Gemini AI)")
 st.markdown("Enter up to 1000 Legal Names below (one per line):")
 
 names_input = st.text_area("Legal Names", height=300)
@@ -55,7 +50,7 @@ if st.button("Search GST Numbers") and names_input.strip():
 
     progress = st.progress(0)
     for i, name in enumerate(names):
-        gst_results = get_gst_via_bing(name)
+        gst_results = get_gst_via_gemini(name)
         found = gst_results[0][0] if gst_results else "Not Found"
         output_data.append({"Legal Name": name, "GST Number": found})
 
