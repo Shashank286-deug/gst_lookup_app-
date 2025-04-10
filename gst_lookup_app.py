@@ -3,43 +3,40 @@ import requests
 import pandas as pd
 from io import BytesIO
 
-# Gemini API config
-GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
-GEMINI_ENDPOINT = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+# SerpAPI key from secrets
+SERP_API_KEY = st.secrets["SERP_API_KEY"]
 
-# Query Gemini API for GST info
-@st.cache_data
-def get_gst_via_gemini(name):
-    prompt = f"Search for the GST number of the company '{name}' in India. Return only the GST number if available, or say 'Not Found'."
-    headers = {"Content-Type": "application/json"}
-    data = {
-        "contents": [
-            {
-                "parts": [
-                    {"text": prompt}
-                ]
-            }
-        ]
+@st.cache_data(show_spinner=False)
+def search_gst_with_serpapi(name):
+    query = f"{name} gst number"
+    params = {
+        "q": query,
+        "api_key": SERP_API_KEY,
+        "engine": "google",
+        "num": 3
     }
     try:
-        response = requests.post(GEMINI_ENDPOINT, headers=headers, json=data, timeout=15)
-        if response.status_code == 200:
-            result = response.json()
-            content = result["candidates"][0]["content"]["parts"][0]["text"].strip()
-            return [(content, name)]
-        else:
-            return [("Error", f"API {response.status_code}")]
+        response = requests.get("https://serpapi.com/search", params=params, timeout=10)
+        data = response.json()
+        answers = []
+
+        for result in data.get("organic_results", []):
+            snippet = result.get("snippet", "")
+            if "GST" in snippet.upper():
+                answers.append(snippet)
+
+        return [(answers[0] if answers else "Not Found", name)]
     except Exception as e:
         return [("Error", str(e))]
 
-# Recent searches memory
+# Recent searches
 if "recent_searches" not in st.session_state:
     st.session_state.recent_searches = []
 
 def clear_recent():
     st.session_state.recent_searches = []
 
-st.title("🔍 GST Lookup Tool (via Gemini AI)")
+st.title("🔍 GST Lookup Tool (via SerpAPI)")
 st.markdown("Enter up to 1000 Legal Names below (one per line):")
 
 names_input = st.text_area("Legal Names", height=300)
@@ -50,11 +47,11 @@ if st.button("Search GST Numbers") and names_input.strip():
 
     progress = st.progress(0)
     for i, name in enumerate(names):
-        gst_results = get_gst_via_gemini(name)
+        gst_results = search_gst_with_serpapi(name)
         found = gst_results[0][0] if gst_results else "Not Found"
         output_data.append({"Legal Name": name, "GST Number": found})
 
-        # Save to recent searches (latest 5)
+        # Store recent
         if name not in st.session_state.recent_searches:
             st.session_state.recent_searches.insert(0, name)
             st.session_state.recent_searches = st.session_state.recent_searches[:5]
@@ -64,12 +61,12 @@ if st.button("Search GST Numbers") and names_input.strip():
     df = pd.DataFrame(output_data)
     st.dataframe(df)
 
-    # Download Excel
+    # Download
     output = BytesIO()
     df.to_excel(output, index=False)
     st.download_button("📥 Download Results as Excel", output.getvalue(), file_name="gst_results.xlsx")
 
-# Recent search section
+# Recent search list
 st.subheader("🕘 Recent Searches")
 for i, name in enumerate(st.session_state.recent_searches):
     cols = st.columns([4, 1, 1])
