@@ -12,11 +12,10 @@ import os
 def get_gst_from_knowyourgst(name):
     try:
         options = Options()
-        options.binary_location = "/usr/bin/chromium-browser"
         options.add_argument('--headless')
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
-        driver = webdriver.Chrome(options=options)
+        driver = webdriver.Chrome(service=Service(), options=options)
 
         search_url = f"https://www.knowyourgst.com/search/?q={name.replace(' ', '+')}"
         driver.get(search_url)
@@ -36,46 +35,40 @@ def get_gst_from_knowyourgst(name):
     except Exception as e:
         return "Error", str(e)
 
-# Streamlit App UI
-st.title("🔎 GSTIN Finder from Legal Name")
-st.write("Upload an Excel file with a column named `Legal Name`.")
+# Streamlit UI
+st.title("🔎 GSTIN Finder from Legal Names")
+st.write("Paste up to 1000 legal names (one per line) below:")
 
-uploaded_file = st.file_uploader("Upload Excel File", type=["xlsx"])
+input_text = st.text_area("Enter Legal Names", height=300, help="Paste legal names here, one per line")
 
-if uploaded_file:
-    try:
-        df = pd.read_excel(uploaded_file)
-        if 'Legal Name' not in df.columns:
-            st.error("Please make sure your Excel file has a column named 'Legal Name'")
-        else:
-            if st.button("Start GSTIN Lookup"):
-                result_data = []
+if st.button("Find GSTINs"):
+    legal_names = [name.strip() for name in input_text.strip().split("\n") if name.strip()]
 
-                with st.spinner("Fetching GSTINs..."):
-                    for name in df['Legal Name']:
-                        gstin, official_name = get_gst_from_knowyourgst(name)
-                        result_data.append({
-                            "Input Legal Name": name,
-                            "Found GSTIN": gstin,
-                            "Matched Legal Name": official_name
-                        })
+    if not legal_names:
+        st.warning("Please enter at least one legal name.")
+    elif len(legal_names) > 1000:
+        st.warning("Limit is 1000 names. Please reduce the number of names.")
+    else:
+        result_data = []
+        with st.spinner("Fetching GSTINs..."):
+            for name in legal_names:
+                gstin, official_name = get_gst_from_knowyourgst(name)
+                result_data.append({
+                    "Input Legal Name": name,
+                    "Found GSTIN": gstin,
+                    "Matched Legal Name": official_name
+                })
 
-                result_df = pd.DataFrame(result_data)
-                st.success("Lookup complete!")
-                st.dataframe(result_df)
+        result_df = pd.DataFrame(result_data)
+        st.success("Lookup complete!")
+        st.dataframe(result_df)
 
-                # Merge results with original file
-                output_df = pd.concat([df, result_df.drop(columns=["Input Legal Name"])], axis=1)
-
-                with NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-                    output_df.to_excel(tmp.name, index=False)
-                    st.download_button(
-                        label="📥 Download Results as Excel",
-                        data=open(tmp.name, 'rb').read(),
-                        file_name="gst_results.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-                    os.unlink(tmp.name)
-
-    except Exception as e:
-        st.error(f"Error processing file: {e}")
+        with NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+            result_df.to_excel(tmp.name, index=False)
+            st.download_button(
+                label="📥 Download Results as Excel",
+                data=open(tmp.name, 'rb').read(),
+                file_name="gst_results.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+            os.unlink(tmp.name)
