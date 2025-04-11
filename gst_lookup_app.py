@@ -8,6 +8,8 @@ import re
 # API Keys
 SERP_API_KEY = "d117d85524c9f1e5bba5541adfd0511769a8a7af"
 BING_API_KEY = st.secrets.get("BING_API_KEY")
+GOOGLE_CX = "b4a4eccaa058d4a80"
+GOOGLE_API_KEY = st.secrets.get("GOOGLE_API_KEY")  # Store in .streamlit/secrets.toml
 
 @st.cache_data(show_spinner=False)
 def search_gst_with_serpapi(name):
@@ -66,28 +68,23 @@ def google_scrape_fallback(name):
     return "Not Found"
 
 @st.cache_data(show_spinner=False)
-def alt_format_web_search(name):
-    # Split name into parts, replace space with underscore
-    name_parts = name.strip().split()
-    if len(name_parts) > 1:
-        query_name = f"{name_parts[0]}_{name_parts[-1]}"
-    else:
-        query_name = name
-
-    query = f"{query_name} gst number"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36"
+def google_cse_json_api(name):
+    query = f"{name} gst number"
+    params = {
+        "key": GOOGLE_API_KEY,
+        "cx": GOOGLE_CX,
+        "q": query
     }
     try:
-        response = requests.get("https://www.google.com/search", params={"q": query}, headers=headers, timeout=10)
-        soup = BeautifulSoup(response.text, "html.parser")
-        for span in soup.find_all("span"):
-            text = span.get_text()
-            if re.search(r"\b\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}[Z]{1}[A-Z\d]{1}\b", text):
-                return text
+        response = requests.get("https://www.googleapis.com/customsearch/v1", params=params, timeout=10)
+        results = response.json().get("items", [])
+        for item in results:
+            snippet = item.get("snippet", "")
+            if re.search(r"\b\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}[Z]{1}[A-Z\d]{1}\b", snippet):
+                return snippet
     except:
         pass
-    return "Not Found"
+    return None
 
 # Recent searches
 if "recent_searches" not in st.session_state:
@@ -96,7 +93,7 @@ if "recent_searches" not in st.session_state:
 def clear_recent():
     st.session_state.recent_searches = []
 
-st.title("🔍 GST Lookup Tool (via SerpAPI, Bing & Google Fallback)")
+st.title("🔍 GST Lookup Tool (via SerpAPI, Bing, Google & CSE API)")
 st.markdown("Enter up to 1000 Legal Names below (one per line):")
 
 names_input = st.text_area("Legal Names", height=300)
@@ -111,9 +108,9 @@ if st.button("Search GST Numbers") and names_input.strip():
         if not result:
             result = search_gst_with_bing(name)
         if not result:
+            result = google_cse_json_api(name)
+        if not result:
             result = google_scrape_fallback(name)
-        if not result or result == "Not Found":
-            result = alt_format_web_search(name)
 
         output_data.append({"Legal Name": name, "GST Number": result})
 
