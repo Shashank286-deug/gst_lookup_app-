@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 import re
 
 # API Keys
-SERP_API_KEY = st.secrets.get("SERP_API_KEY")
+SERP_API_KEY = "d117d85524c9f1e5bba5541adfd0511769a8a7af"
 BING_API_KEY = st.secrets.get("BING_API_KEY")
 
 @st.cache_data(show_spinner=False)
