@@ -24,8 +24,10 @@ def search_gst_with_serpapi(name):
         answers = []
         for result in data.get("organic_results", []):
             snippet = result.get("snippet", "")
-            if re.search(r"\b\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}[Z]{1}[A-Z\d]{1}\b", snippet):
-                return re.search(r"\b\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}[Z]{1}[A-Z\d]{1}\b", snippet).group()
+            if "GST" in snippet.upper():
+                answers.append(snippet)
+        if answers:
+            return answers[0]
     except:
         pass
     return None
@@ -41,7 +43,7 @@ def search_gst_with_bing(name):
         snippets = [v.get("snippet", "") for v in results.get("webPages", {}).get("value", [])]
         for snippet in snippets:
             if re.search(r"\b\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}[Z]{1}[A-Z\d]{1}\b", snippet):
-                return re.search(r"\b\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}[Z]{1}[A-Z\d]{1}\b", snippet).group()
+                return snippet
     except:
         pass
     return None
@@ -58,25 +60,31 @@ def google_scrape_fallback(name):
         for span in soup.find_all("span"):
             text = span.get_text()
             if re.search(r"\b\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}[Z]{1}[A-Z\d]{1}\b", text):
-                return re.search(r"\b\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}[Z]{1}[A-Z\d]{1}\b", text).group()
+                return text
     except:
         pass
     return "Not Found"
 
-# New fallback to search using underscore format
 @st.cache_data(show_spinner=False)
 def alt_format_web_search(name):
-    alt_query = f"{name.replace(' ', '_')} gst number"
+    # Split name into parts, replace space with underscore
+    name_parts = name.strip().split()
+    if len(name_parts) > 1:
+        query_name = f"{name_parts[0]}_{name_parts[-1]}"
+    else:
+        query_name = name
+
+    query = f"{query_name} gst number"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36"
     }
     try:
-        response = requests.get("https://www.google.com/search", params={"q": alt_query}, headers=headers, timeout=10)
+        response = requests.get("https://www.google.com/search", params={"q": query}, headers=headers, timeout=10)
         soup = BeautifulSoup(response.text, "html.parser")
         for span in soup.find_all("span"):
             text = span.get_text()
             if re.search(r"\b\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}[Z]{1}[A-Z\d]{1}\b", text):
-                return re.search(r"\b\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}[Z]{1}[A-Z\d]{1}\b", text).group()
+                return text
     except:
         pass
     return "Not Found"
