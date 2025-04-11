@@ -8,8 +8,8 @@ import re
 # API Keys
 SERP_API_KEY = "d117d85524c9f1e5bba5541adfd0511769a8a7af"
 BING_API_KEY = st.secrets.get("BING_API_KEY")
-GOOGLE_CX = "b4a4eccaa058d4a80"
-GOOGLE_API_KEY = st.secrets.get("GOOGLE_API_KEY")  # Store in .streamlit/secrets.toml
+GOOGLE_API_KEY = st.secrets.get("GOOGLE_API_KEY")
+BRAVE_API_KEY = "BSAEVojmmWmY2wnNwzDfRk9JOyfx5em"
 
 @st.cache_data(show_spinner=False)
 def search_gst_with_serpapi(name):
@@ -51,6 +51,21 @@ def search_gst_with_bing(name):
     return None
 
 @st.cache_data(show_spinner=False)
+def search_gst_with_brave(name):
+    query = f"{name} gst number"
+    headers = {"X-Subscription-Token": BRAVE_API_KEY}
+    try:
+        response = requests.get(f"https://api.search.brave.com/res/v1/web/search?q={query}", headers=headers, timeout=10)
+        data = response.json()
+        for result in data.get("web", {}).get("results", []):
+            snippet = result.get("description", "")
+            if re.search(r"\b\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}[Z]{1}[A-Z\d]{1}\b", snippet):
+                return snippet
+    except:
+        pass
+    return None
+
+@st.cache_data(show_spinner=False)
 def google_scrape_fallback(name):
     query = f"{name} gst number"
     headers = {
@@ -67,25 +82,6 @@ def google_scrape_fallback(name):
         pass
     return "Not Found"
 
-@st.cache_data(show_spinner=False)
-def google_cse_json_api(name):
-    query = f"{name} gst number"
-    params = {
-        "key": GOOGLE_API_KEY,
-        "cx": GOOGLE_CX,
-        "q": query
-    }
-    try:
-        response = requests.get("https://www.googleapis.com/customsearch/v1", params=params, timeout=10)
-        results = response.json().get("items", [])
-        for item in results:
-            snippet = item.get("snippet", "")
-            if re.search(r"\b\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}[Z]{1}[A-Z\d]{1}\b", snippet):
-                return snippet
-    except:
-        pass
-    return None
-
 # Recent searches
 if "recent_searches" not in st.session_state:
     st.session_state.recent_searches = []
@@ -93,7 +89,7 @@ if "recent_searches" not in st.session_state:
 def clear_recent():
     st.session_state.recent_searches = []
 
-st.title("🔍 GST Lookup Tool (via SerpAPI, Bing, Google & CSE API)")
+st.title("🔍 GST Lookup Tool (via SerpAPI, Bing, Brave & Google Fallback)")
 st.markdown("Enter up to 1000 Legal Names below (one per line):")
 
 names_input = st.text_area("Legal Names", height=300)
@@ -108,7 +104,7 @@ if st.button("Search GST Numbers") and names_input.strip():
         if not result:
             result = search_gst_with_bing(name)
         if not result:
-            result = google_cse_json_api(name)
+            result = search_gst_with_brave(name)
         if not result:
             result = google_scrape_fallback(name)
 
