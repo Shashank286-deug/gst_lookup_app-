@@ -2,82 +2,27 @@ import streamlit as st
 import requests
 import pandas as pd
 from io import BytesIO
-from bs4 import BeautifulSoup
 import re
 
-# API Keys
-SERP_API_KEY = "d117d85524c9f1e5bba5541adfd0511769a8a7af"
-BING_API_KEY = st.secrets.get("BING_API_KEY")
-GOOGLE_API_KEY = st.secrets.get("GOOGLE_API_KEY")
+# Brave API Key
 BRAVE_API_KEY = "BSAEVojmmWmY2wnNwzDfRk9JOyfx5em"
-
-@st.cache_data(show_spinner=False)
-def search_gst_with_serpapi(name):
-    query = f"{name} gst number"
-    params = {
-        "q": query,
-        "api_key": SERP_API_KEY,
-        "engine": "google",
-        "num": 3
-    }
-    try:
-        response = requests.get("https://serpapi.com/search", params=params, timeout=10)
-        data = response.json()
-        answers = []
-        for result in data.get("organic_results", []):
-            snippet = result.get("snippet", "")
-            if "GST" in snippet.upper():
-                answers.append(snippet)
-        if answers:
-            return answers[0]
-    except:
-        pass
-    return None
-
-@st.cache_data(show_spinner=False)
-def search_gst_with_bing(name):
-    query = f"{name} gst number"
-    headers = {"Ocp-Apim-Subscription-Key": BING_API_KEY}
-    params = {"q": query, "mkt": "en-IN"}
-    try:
-        response = requests.get("https://api.bing.microsoft.com/v7.0/search", headers=headers, params=params, timeout=10)
-        results = response.json()
-        snippets = [v.get("snippet", "") for v in results.get("webPages", {}).get("value", [])]
-        for snippet in snippets:
-            if re.search(r"\b\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}[Z]{1}[A-Z\d]{1}\b", snippet):
-                return snippet
-    except:
-        pass
-    return None
 
 @st.cache_data(show_spinner=False)
 def search_gst_with_brave(name):
     query = f"{name} gst number"
-    headers = {"X-Subscription-Token": BRAVE_API_KEY}
-    try:
-        response = requests.get(f"https://api.search.brave.com/res/v1/web/search?q={query}", headers=headers, timeout=10)
-        data = response.json()
-        for result in data.get("web", {}).get("results", []):
-            snippet = result.get("description", "")
-            if re.search(r"\b\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}[Z]{1}[A-Z\d]{1}\b", snippet):
-                return snippet
-    except:
-        pass
-    return None
-
-@st.cache_data(show_spinner=False)
-def google_scrape_fallback(name):
-    query = f"{name} gst number"
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36"
+        "Accept": "application/json",
+        "X-Subscription-Token": BRAVE_API_KEY
     }
+    params = {"q": query, "count": 3}
     try:
-        response = requests.get("https://www.google.com/search", params={"q": query}, headers=headers, timeout=10)
-        soup = BeautifulSoup(response.text, "html.parser")
-        for span in soup.find_all("span"):
-            text = span.get_text()
-            if re.search(r"\b\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}[Z]{1}[A-Z\d]{1}\b", text):
-                return text
+        response = requests.get("https://api.search.brave.com/res/v1/web/search", headers=headers, params=params, timeout=10)
+        results = response.json()
+        for item in results.get("web", {}).get("results", []):
+            snippet = item.get("description", "")
+            match = re.search(r"\b\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}[Z]{1}[A-Z\d]{1}\b", snippet)
+            if match:
+                return match.group(0)
     except:
         pass
     return "Not Found"
@@ -89,7 +34,7 @@ if "recent_searches" not in st.session_state:
 def clear_recent():
     st.session_state.recent_searches = []
 
-st.title("🔍 GST Lookup Tool (via SerpAPI, Bing, Brave & Google Fallback)")
+st.title("🔍 GST Lookup Tool (via Brave API)")
 st.markdown("Enter up to 1000 Legal Names below (one per line):")
 
 names_input = st.text_area("Legal Names", height=300)
@@ -100,13 +45,7 @@ if st.button("Search GST Numbers") and names_input.strip():
 
     progress = st.progress(0)
     for i, name in enumerate(names):
-        result = search_gst_with_serpapi(name)
-        if not result:
-            result = search_gst_with_bing(name)
-        if not result:
-            result = search_gst_with_brave(name)
-        if not result:
-            result = google_scrape_fallback(name)
+        result = search_gst_with_brave(name)
 
         output_data.append({"Legal Name": name, "GST Number": result})
 
