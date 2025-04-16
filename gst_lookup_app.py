@@ -5,14 +5,14 @@ from io import BytesIO
 import re
 
 # Brave API Key
-BRAVE_API_KEY="BSAEVojmmWmY2wnNwzDfRk9JOyfx5em"
+SERP_API_KEY = "67ff5cc8d718409c3a7b00a2"
 
 @st.cache_data(show_spinner=False)
 def search_gst_with_brave(name):
     query = f"{name} gst number"
     headers = {
         "Accept": "application/json",
-        "X-Subscription-Token": BRAVE_API_KEY
+        "X-Subscription-Token": SERP_API_KEY
     }
     params = {"q": query, "count": 3}
     try:
